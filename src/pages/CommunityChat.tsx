@@ -53,8 +53,13 @@ export default function CommunityChat() {
     if (communityId) {
       fetchCommunity();
       fetchMessages();
-      subscribeToMessages();
-      subscribeToVotes();
+      const unsubscribeMessages = subscribeToMessages();
+      const unsubscribeVotes = subscribeToVotes();
+      
+      return () => {
+        unsubscribeMessages();
+        unsubscribeVotes();
+      };
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [communityId]);
@@ -159,16 +164,21 @@ const subscribeToMessages = () => {
       },
       (payload) => {
         // Fetch affected message to verify community
-        if (payload.new && 'message_id' in payload.new) {
+        if (payload.new && typeof payload.new === 'object' && 'message_id' in payload.new) {
           supabase
             .from('community_messages')
             .select('community_id')
             .eq('id', payload.new.message_id)
-          .then(({ data }) => {
-          if (data && data[0]?.community_id === communityId) {
-            fetchMessages();
-          }
-          });
+            .single()
+            .then(({ data, error }) => {
+              if (error) {
+                console.error('Error checking message community:', error);
+                return;
+              }
+              if (data && data.community_id === communityId) {
+                fetchMessages();
+              }
+            });
         }
       }
     )
@@ -290,6 +300,7 @@ const handleVote = async (
       }).select();
 
       if (error) throw error;
+      if (!data || data.length === 0) return;
 
       const newMsg = {
         ...data[0],
@@ -298,7 +309,7 @@ const handleVote = async (
         },
         upvotes: 0,
         downvotes: 0,
-        userVote: null,
+        userVote: null as "upvote" | "downvote" | null,
       };
       setMessages((prevMessages) => [...prevMessages, newMsg]);
 
@@ -307,6 +318,26 @@ const handleVote = async (
       console.error("Error sending message:", error);
     }
   };
+
+  if (!communityId) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-background text-foreground">
+        <div className="text-center">
+          <p className="text-xl text-foreground">
+            <Translate>Invalid Community</Translate>
+          </p>
+          <Button
+            variant="outline"
+            onClick={() => navigate("/community")}
+            className="mt-4"
+          >
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            <Translate>Back to Communities</Translate>
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -492,7 +523,7 @@ const handleVote = async (
       </div>
 
       {/* Animation keyframes */}
-      <style jsx>{`
+      <style>{`
         @keyframes float {
           0% {
             transform: translateY(0) translateX(0);
